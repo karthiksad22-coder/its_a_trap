@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>It's A Trap</title>
+
+<style>
+
+body{
+margin:0;
+overflow:hidden;
+font-family:Arial;
+background:black;
+color:white;
+}
+
+/* TIMER UI */
+#ui{
+position:absolute;
+top:10px;
+left:50%;
+transform:translateX(-50%);
+z-index:10;
+font-size:28px;
+font-weight:bold;
+color:#ff3b3b;
+letter-spacing:3px;
+}
+
+/* MAIN MENU */
+#menu{
+position:absolute;
+top:45%;
+left:50%;
+transform:translate(-50%,-50%);
+text-align:center;
+}
+
+/* GAME TITLE STYLE */
+.title{
+font-size:80px;
+font-weight:900;
+text-transform:uppercase;
+letter-spacing:5px;
+margin-bottom:40px;
+
+color:white;
+
+text-shadow:
+0 0 5px #ff3b3b,
+0 0 10px #ff3b3b,
+0 0 20px #ff1a1a,
+0 0 40px #ff0000;
+}
+
+/* BUTTON STYLE */
+button{
+padding:14px 40px;
+margin:10px;
+font-size:20px;
+cursor:pointer;
+border:none;
+border-radius:6px;
+background:#b30000;
+color:white;
+
+box-shadow:
+0 0 10px #ff1a1a,
+0 0 20px #ff0000;
+
+transition:0.25s;
+}
+
+button:hover{
+
+background:#ff0000;
+
+box-shadow:
+0 0 15px #ff1a1a,
+0 0 30px #ff0000,
+0 0 50px #ff0000;
+
+transform:scale(1.05);
+}
+
+/* GAME OVER SCREEN */
+#gameover{
+display:none;
+position:absolute;
+top:40%;
+left:50%;
+transform:translate(-50%,-50%);
+background:#111;
+padding:30px;
+border:2px solid red;
+text-align:center;
+}
+
+/* WIN SCREEN */
+#win{
+display:none;
+position:absolute;
+top:40%;
+left:50%;
+transform:translate(-50%,-50%);
+background:#111;
+padding:30px;
+border:2px solid lime;
+text-align:center;
+}
+
+</style>
+</head>
+
+<body>
+
+<div id="ui">
+<div id="timer">[10:00:00]</div>
+</div>
+
+<div id="menu">
+
+<div class="title">It's A Trap</div>
+
+<button onclick="startGame()">Start Game</button>
+
+</div>
+
+<div id="gameover">
+<h2>Game Over</h2>
+<button onclick="location.reload()">Restart</button>
+</div>
+
+<div id="win">
+<h2>You Win!</h2>
+<button onclick="location.reload()">Play Again</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<script src="JavaScript/coins.js"></script>
+<script src="JavaScript/power-ups.js"></script>
+<script src="JavaScript/coinanimation.js"></script>
+
+<script>
+
+let scene,camera,renderer;
+let turrets=[];
+let bullets=[];
+let shootingInterval;
+
+let player={x:0,z:15,y:2};
+
+let level=1;
+let maxLevels=4;
+
+let speed=0.12;
+let bulletSpeed=0.4;
+let shootRate=1600;
+
+let keys={};
+
+const corridorLength=60;
+const finishZ=-45;
+
+let isDropping=false;
+let gameActive=true;
+
+let totalTime=600000;
+let startTime;
+
+function startGame(){
+
+document.getElementById("menu").style.display="none";
+
+init();
+animate();
+
+startTime=Date.now();
+
+startShooting();
+
+}
+
+function startShooting(){
+
+clearInterval(shootingInterval);
+
+shootingInterval=setInterval(()=>{
+if(gameActive && !isDropping){
+turrets.forEach(t=>shootBullet(t));
+}
+},shootRate);
+
+}
+
+function init(){
+
+scene=new THREE.Scene();
+
+scene.fog=new THREE.Fog(0x000000,20,120);
+
+camera=new THREE.PerspectiveCamera(
+75,
+window.innerWidth/window.innerHeight,
+0.1,
+1000
+);
+
+renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(window.innerWidth,window.innerHeight);
+renderer.shadowMap.enabled=true;
+document.body.appendChild(renderer.domElement);
+
+const ambient=new THREE.AmbientLight(0x404040);
+scene.add(ambient);
+
+const light=new THREE.DirectionalLight(0xffffff,1);
+light.position.set(10,20,10);
+light.castShadow=true;
+scene.add(light);
+
+createRoom();
+createTurrets();
+createFinishLine();
+
+camera.position.set(0,2,15);
+
+document.addEventListener("keydown",e=>keys[e.key]=true);
+document.addEventListener("keyup",e=>keys[e.key]=false);
+
+document.body.addEventListener("mousemove",mouseLook);
+
+}
+
+function mouseLook(e){
+camera.rotation.y -= e.movementX * 0.002;
+}
+
+function createRoom(){
+
+const loader=new THREE.TextureLoader();
+
+const brick=loader.load("https://threejsfundamentals.org/threejs/resources/images/wall.jpg");
+brick.wrapS=brick.wrapT=THREE.RepeatWrapping;
+brick.repeat.set(6,3);
+
+const floor=new THREE.Mesh(
+new THREE.PlaneGeometry(20,corridorLength),
+new THREE.MeshStandardMaterial({map:brick})
+);
+
+floor.rotation.x=-Math.PI/2;
+floor.position.z=-15;
+scene.add(floor);
+
+const wallMaterial=new THREE.MeshStandardMaterial({map:brick});
+
+const leftWall=new THREE.Mesh(new THREE.BoxGeometry(1,6,corridorLength),wallMaterial);
+leftWall.position.set(-10,3,-15);
+scene.add(leftWall);
+
+const rightWall=new THREE.Mesh(new THREE.BoxGeometry(1,6,corridorLength),wallMaterial);
+rightWall.position.set(10,3,-15);
+scene.add(rightWall);
+
+const backWall=new THREE.Mesh(new THREE.BoxGeometry(20,6,1),wallMaterial);
+backWall.position.set(0,3,20);
+scene.add(backWall);
+
+const gapSize=6;
+
+const frontLeft=new THREE.Mesh(
+new THREE.BoxGeometry((20-gapSize)/2,6,1),
+wallMaterial
+);
+
+frontLeft.position.set(-(gapSize/2 + (20-gapSize)/4),3,finishZ-3);
+scene.add(frontLeft);
+
+const frontRight=new THREE.Mesh(
+new THREE.BoxGeometry((20-gapSize)/2,6,1),
+wallMaterial
+);
+
+frontRight.position.set((gapSize/2 + (20-gapSize)/4),3,finishZ-3);
+scene.add(frontRight);
+
+const ceiling=new THREE.Mesh(new THREE.PlaneGeometry(20,corridorLength),wallMaterial);
+ceiling.rotation.x=Math.PI/2;
+ceiling.position.set(0,6,-15);
+scene.add(ceiling);
+
+}
+
+function createTurrets(){
+
+turrets=[];
+
+let positions=[
+[-6,finishZ+1],
+[6,finishZ+1],
+[-3,finishZ+1],
+[3,finishZ+1]
+];
+
+for(let i=0;i<level;i++){
+
+let base=new THREE.Mesh(
+new THREE.CylinderGeometry(1,1,1,20),
+new THREE.MeshStandardMaterial({color:0x222222})
+);
+
+base.position.set(positions[i][0],0.5,positions[i][1]);
+scene.add(base);
+
+let barrel=new THREE.Mesh(
+new THREE.CylinderGeometry(0.3,0.3,4,16),
+new THREE.MeshStandardMaterial({color:0x555555})
+);
+
+barrel.rotation.z=Math.PI/2;
+barrel.position.set(positions[i][0]+2,1.2,positions[i][1]);
+
+scene.add(barrel);
+
+turrets.push(barrel);
+
+}
+
+}
+
+function createFinishLine(){
+
+const line=new THREE.Mesh(
+new THREE.BoxGeometry(6,0.1,0.5),
+new THREE.MeshBasicMaterial({color:0xff0000})
+);
+
+line.position.set(0,0.05,finishZ);
+scene.add(line);
+
+}
+
+function shootBullet(barrel){
+
+const bullet=new THREE.Mesh(
+new THREE.CylinderGeometry(0.3,0.3,4,12),
+new THREE.MeshBasicMaterial({color:0x55ccff})
+);
+
+bullet.position.copy(barrel.position);
+
+let direction=new THREE.Vector3(
+player.x-bullet.position.x,
+player.y-bullet.position.y,
+player.z-bullet.position.z
+).normalize();
+
+bullet.quaternion.setFromUnitVectors(
+new THREE.Vector3(0,1,0),
+direction.clone()
+);
+
+bullet.userData={direction};
+
+scene.add(bullet);
+bullets.push(bullet);
+
+}
+
+function movePlayer(){
+
+if(isDropping) return;
+
+if(keys["w"]||keys["ArrowUp"]) player.z-=speed;
+if(keys["a"]||keys["ArrowLeft"]) player.x-=speed;
+if(keys["d"]||keys["ArrowRight"]) player.x+=speed;
+
+player.x=Math.max(-9,Math.min(9,player.x));
+player.z=Math.max(finishZ-2,Math.min(20,player.z));
+
+camera.position.x=player.x;
+camera.position.z=player.z;
+
+}
+
+function updateBullets(){
+
+if(!gameActive) return;
+
+bullets.forEach(b=>{
+
+b.position.add(
+b.userData.direction.clone().multiplyScalar(bulletSpeed)
+);
+
+let dx=player.x-b.position.x;
+let dz=player.z-b.position.z;
+
+if(Math.sqrt(dx*dx+dz*dz)<0.8){
+gameOver();
+}
+
+});
+
+}
+
+function checkFinish(){
+
+if(player.z<finishZ && !isDropping){
+
+if(level===maxLevels){
+
+gameActive=false;
+clearInterval(shootingInterval);
+document.getElementById("win").style.display="block";
+return;
+
+}
+
+dropToNextContainer();
+
+}
+
+}
+
+function dropToNextContainer(){
+
+isDropping=true;
+clearInterval(shootingInterval);
+
+bullets.forEach(b=>scene.remove(b));
+bullets=[];
+
+let dropDistance=20;
+let dropStart=camera.position.y;
+
+let dropInterval=setInterval(()=>{
+
+camera.position.y-=0.5;
+
+if(camera.position.y<=dropStart-dropDistance){
+
+clearInterval(dropInterval);
+
+level++;
+
+player.x=0;
+player.z=15;
+camera.position.y=2;
+
+increaseDifficulty();
+
+createTurrets();
+
+isDropping=false;
+
+startShooting();
+
+}
+
+},16);
+
+}
+
+function increaseDifficulty(){
+
+bulletSpeed+=0.15;
+shootRate-=200;
+
+}
+
+function updateTimer(){
+
+let elapsed=Date.now()-startTime;
+let remaining=totalTime-elapsed;
+
+if(remaining<=0){
+gameOver();
+return;
+}
+
+let minutes=Math.floor(remaining/60000);
+let seconds=Math.floor((remaining%60000)/1000);
+let ms=Math.floor((remaining%1000)/10);
+
+document.getElementById("timer").innerText=
+`[${String(minutes).padStart(2,"0")}:${String(seconds).padStart(2,"0")}:${String(ms).padStart(2,"0")}]`;
+
+}
+
+function gameOver(){
+
+gameActive=false;
+clearInterval(shootingInterval);
+
+document.getElementById("gameover").style.display="block";
+
+}
+
+function animate(){
+
+requestAnimationFrame(animate);
+
+movePlayer();
+updateBullets();
+checkFinish();
+updateTimer();
+
+turrets.forEach(t=>{
+t.lookAt(new THREE.Vector3(player.x,player.y,player.z));
+});
+
+renderer.render(scene,camera);
+
+}
+
+</script>
+
+</body>
+</html>
